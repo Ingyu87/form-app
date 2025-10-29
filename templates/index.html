@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 문항 분석 및 폼 생성기</title>
+    <!-- Tailwind CSS 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- pdf.js 라이브러리 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px;
+            border-radius: 50%; border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white w-full max-w-3xl rounded-xl shadow-lg p-8">
+        
+        <!-- 로그인/로그아웃 버튼 -->
+        <div class="flex justify-end mb-4">
+            <!-- 
+                서버가 템플릿을 렌더링할 때 'logged_in' 변수를 주입합니다.
+                Jinja2 템플릿 구문입니다.
+            -->
+            {% if logged_in %}
+                <a href="/logout" class="bg-red-500 text-white text-sm font-semibold py-2 px-4 rounded-lg hover:bg-red-600 transition-colors">
+                    Google 로그아웃
+                </a>
+            {% else %}
+                <a href="/auth/google" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.574l6.19,5.238C39.99,36.596,44,31.014,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path></svg>
+                    <span>Google 계정으로 로그인</span>
+                </a>
+            {% endif %}
+        </div>
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">PDF 문항 분석 및 폼 생성기</h1>
+            <p class="text-gray-600 mt-2">PDF 시험지를 Google Form으로 자동 변환합니다.</p>
+        </header>
+
+        <!-- 로그인 필요 알림 -->
+        {% if not logged_in %}
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg mb-6">
+            <p class="text-yellow-700">Google 폼을 생성하려면 먼저 'Google 계정으로 로그인'을 해주세요.</p>
+        </div>
+        {% endif %}
+
+        <!-- 메인 앱 영역 (로그인 시 활성화) -->
+        <div id="main-app" class_="{{ 'opacity-50 pointer-events-none' if not logged_in else '' }}">
+            <!-- 0. 설문지 제목 및 설명 입력 -->
+            <div class="mb-6">
+                <label for="survey-title" class="block text-sm font-medium text-gray-700 mb-2">설문지 제목 (선택사항):</label>
+                <input type="text" id="survey-title" placeholder="예: 2025 학교평가 설문" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" {% if not logged_in %}disabled{% endif %}>
+            </div>
+            <div class="mb-6">
+                <label for="survey-description" class="block text-sm font-medium text-gray-700 mb-2">설문지 설명 (선택사항):</label>
+                <textarea id="survey-description" rows="3" placeholder="설문지에 대한 설명을 입력하세요" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" {% if not logged_in %}disabled{% endif %}></textarea>
+            </div>
+            
+            <!-- 1. 파일 업로드 섹션 -->
+            <div class="mb-6">
+                <label for="pdf-upload" class="block text-sm font-medium text-gray-700 mb-2">PDF 파일 업로드:</label>
+                <input type="file" id="pdf-upload" accept=".pdf" class="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
+                    file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700
+                    hover:file:bg-blue-100 transition-colors duration-200
+                " {% if not logged_in %}disabled{% endif %}>
+            </div>
+
+            <!-- 2. 실행 버튼 -->
+            <button id="extract-button" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50" {% if not logged_in %}disabled{% endif %}>
+                <span>1. AI로 문항 분석하기</span>
+            </button>
+
+            <!-- 3. 로딩 및 결과 표시 -->
+            <div id="status-area" class="mt-6 text-center">
+                <div id="loading-spinner" class="hidden mx-auto spinner"></div>
+                <p id="status-message" class="text-gray-500 mt-2"></p>
+            </div>
+
+            <!-- 4. 폼 생성 버튼 (분석 완료 후 표시) -->
+            <button id="create-form-button" class="hidden w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all duration-200 flex items-center justify-center space-x-2 mt-4">
+                <span>2. Google Form 생성하기</span>
+            </button>
+
+            <!-- 5. 결과 (JSON) 출력 영역 -->
+            <div id="result-area" class="mt-8 hidden">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">AI 분석 결과 (JSON)</h3>
+                <pre id="json-output" class="bg-gray-900 text-white text-sm rounded-lg p-6 overflow-x-auto w-full"></pre>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const uploadInput = document.getElementById('pdf-upload');
+        const extractButton = document.getElementById('extract-button');
+        const createFormButton = document.getElementById('create-form-button');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const statusMessage = document.getElementById('status-message');
+        const resultArea = document.getElementById('result-area');
+        const jsonOutput = document.getElementById('json-output');
+        const surveyTitleInput = document.getElementById('survey-title');
+
+        let pdfFile = null;
+        let extractedJsonData = null; // AI가 분석한 JSON 데이터를 저장할 변수
+
+        uploadInput.addEventListener('change', (event) => {
+            pdfFile = event.target.files[0];
+            if (pdfFile) {
+                statusMessage.textContent = `파일 선택됨: ${pdfFile.name}`;
+                resultArea.classList.add('hidden');
+                createFormButton.classList.add('hidden');
+                extractedJsonData = null;
+                
+                // 파일 이름(확장자 제외)을 설문지 제목에 자동 입력
+                const fileName = pdfFile.name;
+                const fileNameWithoutExt = fileName.replace(/\.pdf$/i, '');
+                if (surveyTitleInput && !surveyTitleInput.value) {
+                    surveyTitleInput.value = fileNameWithoutExt;
+                }
+            }
+        });
+
+        extractButton.addEventListener('click', handleAnalysis);
+        createFormButton.addEventListener('click', handleFormCreation);
+
+        /**
+         * 1. PDF 텍스트 추출 및 AI 분석 실행
+         */
+        async function handleAnalysis() {
+            if (!pdfFile) {
+                statusMessage.textContent = '먼저 PDF 파일을 선택해주세요.';
+                return;
+            }
+
+            setLoading(true, 'PDF 파일을 읽는 중...');
+            resultArea.classList.add('hidden');
+            createFormButton.classList.add('hidden');
+            extractedJsonData = null;
+
+            try {
+                // 1. PDF에서 텍스트 추출
+                const pdfText = await extractTextFromPdf(pdfFile);
+                if (!pdfText.trim()) {
+                    setLoading(false, 'PDF에서 텍스트를 추출할 수 없습니다. 이미지로 된 PDF는 아닌지 확인해주세요.');
+                    return;
+                }
+
+                // 2. AI에게 텍스트 전송 및 문항 분석
+                setLoading(true, 'AI가 문항을 분석 중입니다... (최대 1분 소요)');
+                const structuredQuestions = await callGeminiApi(pdfText);
+
+                // 3. 결과 저장 및 표시
+                extractedJsonData = structuredQuestions; // 결과 저장
+                jsonOutput.textContent = JSON.stringify(structuredQuestions, null, 2);
+                resultArea.classList.remove('hidden');
+                createFormButton.classList.remove('hidden'); // 폼 생성 버튼 표시
+                setLoading(false, 'AI 문항 분석 완료! "Google Form 생성하기" 버튼을 눌러주세요.');
+
+            } catch (error) {
+                console.error('분석 중 오류 발생:', error);
+                setLoading(false, `분석 오류: ${error.message}`);
+            }
+        }
+
+        /**
+         * 2. 백엔드 API로 JSON을 보내 Google Form 생성 요청
+         */
+        async function handleFormCreation() {
+            if (!extractedJsonData) {
+                statusMessage.textContent = '먼저 문항 분석을 실행해주세요.';
+                return;
+            }
+
+            setLoading(true, 'Google Form을 생성 중입니다... 잠시만 기다려주세요.');
+            createFormButton.disabled = true;
+
+            try {
+                // 설문지 제목과 설명 가져오기
+                const surveyTitle = document.getElementById('survey-title').value || (extractedJsonData.surveyTitle || '');
+                const surveyDescription = document.getElementById('survey-description').value || (extractedJsonData.surveyDescription || '');
+                
+                // 문항 데이터 준비 (questions 배열 또는 전체 객체)
+                const questionsData = extractedJsonData.questions || extractedJsonData;
+                
+                // 백엔드로 전송할 데이터
+                const formData = {
+                    surveyTitle: surveyTitle,
+                    surveyDescription: surveyDescription,
+                    questions: questionsData
+                };
+                
+                const response = await fetch('/api/create-form', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    // 401(인증 안됨) 또는 500(서버 오류)
+                    throw new Error(result.error || `서버 오류: ${response.status}`);
+                }
+                
+                // 성공!
+                setLoading(false, 'Google Form 생성 완료!');
+                // 폼 링크를 새 탭에서 열기
+                window.open(result.form_url, '_blank');
+                statusMessage.innerHTML = `폼 생성 완료! <a href="${result.form_url}" target="_blank" class="text-blue-600 font-bold underline">여기서 확인하세요</a>`;
+
+
+            } catch (error) {
+                console.error('폼 생성 중 오류 발생:', error);
+                if (error.message.includes("Not authenticated") || error.message.includes("log in again")) {
+                     setLoading(false, '인증이 만료되었습니다. 로그아웃 후 다시 로그인해주세요.');
+                } else {
+                     setLoading(false, `폼 생성 오류: ${error.message}`);
+                }
+            } finally {
+                createFormButton.disabled = false;
+            }
+        }
+
+        /**
+         * pdf.js를 사용하여 PDF 파일에서 텍스트를 추출합니다.
+         */
+        async function extractTextFromPdf(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let allText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                allText += pageText + '\n\n';
+            }
+            return allText;
+        }
+
+        /**
+         * Gemini API를 호출하여 텍스트를 구조화된 JSON으로 변환합니다.
+         */
+        async function callGeminiApi(pdfText) {
+            const apiKey = "AIzaSyBdEXu-rQGnMnC4jllugGxL5huMQ81Q7PY";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            const systemPrompt = "당신은 교육 자료 분석 전문가입니다. 제공되는 텍스트에서 설문지 전체 제목과 설명을 먼저 추출하고, 모든 문항을 추출하여 JSON으로 구조화해 주세요. 문항 번호(1번, 2번, I-1, II-5 등)를 인식하고, 질문 유형을 정확히 구분해야 합니다. '기타', '기타 ( )', '기타 직접입력' 등이 있으면 hasOtherOption을 true로 설정하세요. 리커트 척도(매우그렇다, 그렇다, 보통이다 등)나 5점 척도는 LINEAR_SCALE로, '다음 중 여러 개를 고르시오'는 CHECKBOX로, '다음 중 하나를 고르시오'는 MULTIPLE_CHOICE로, 역할 표나 격자 형태는 MULTIPLE_CHOICE_GRID나 CHECKBOX_GRID로 분류하세요.";
+            const userQuery = `다음 텍스트에서 설문지 제목, 설명, 그리고 모든 문항을 추출해 JSON으로 만들어주세요. 문항 번호를 인식하고 각 문항의 유형을 정확히 판단해주세요. '기타' 옵션이 있으면 감지해주세요:\n\n${pdfText}`;
+            
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "surveyTitle": {
+                        type: "STRING",
+                        description: "설문지 전체 제목 (예: '2025 학교평가 및 2026 학교교육과정 설계를 위한 설문'). 없으면 빈 문자열 ''"
+                    },
+                    "surveyDescription": {
+                        type: "STRING",
+                        description: "설문지 전체 설명 또는 안내문. 없으면 빈 문자열 ''"
+                    },
+                    "questions": {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                "questionNumber": { 
+                            type: "STRING", 
+                            description: "문항 번호 (예: '1', '2', 'I-1', 'II-5'). 없으면 빈 문자열 ''"
+                        },
+                        "questionText": { 
+                            type: "STRING", 
+                            description: "지문, 문제 본문 전체 내용 (문항 번호 제외)"
+                        },
+                        "questionType": {
+                            type: "STRING",
+                            enum: [
+                                "MULTIPLE_CHOICE",  // 객관식 (단일 선택, 라디오 버튼)
+                                "CHECKBOX",         // 체크박스 (다중 선택)
+                                "DROPDOWN",         // 드롭다운
+                                "SHORT_ANSWER",     // 단답형
+                                "ESSAY",            // 서술형
+                                "LINEAR_SCALE",     // 선형 배율 (리커트 척도)
+                                "MULTIPLE_CHOICE_GRID",  // 객관식 그리드
+                                "CHECKBOX_GRID"     // 체크박스 그리드
+                            ],
+                            description: "질문 유형. 리커트 척도는 LINEAR_SCALE, 여러 개 선택은 CHECKBOX"
+                        },
+                        "options": {
+                            type: "ARRAY",
+                            description: "선택지 목록. 객관식, 체크박스, 드롭다운인 경우 필수. 주관식이면 빈 배열 [].",
+                            items: { type: "STRING" }
+                        },
+                        "hasOtherOption": {
+                            type: "BOOLEAN",
+                            description: "'기타', '기타 ( )', '기타 직접입력' 등이 있으면 true. 없으면 false"
+                        },
+                        "linearScale": {
+                            type: "OBJECT",
+                            description: "LINEAR_SCALE인 경우에만 사용. 리커트 척도의 최소값(1), 최대값(5), 왼쪽 레이블(예: '전혀 그렇지 않다'), 오른쪽 레이블(예: '매우 그렇다')",
+                            properties: {
+                                "min": { type: "INTEGER", description: "최소값 (보통 1)" },
+                                "max": { type: "INTEGER", description: "최대값 (보통 5)" },
+                                "minLabel": { type: "STRING", description: "왼쪽 레이블 (예: '전혀 그렇지 않다')" },
+                                "maxLabel": { type: "STRING", description: "오른쪽 레이블 (예: '매우 그렇다')" }
+                            }
+                        }
+                            },
+                            required: ["questionText", "questionType"]
+                        }
+                    }
+                },
+                required: ["questions"]
+            };
+            
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: schema,
+                    temperature: 0.1
+                }
+            };
+            
+            // API 호출 (지수 백오프 재시도 포함)
+            let response;
+            let retries = 0;
+            const maxRetries = 5;
+            let delay = 1000;
+
+            while (retries < maxRetries) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) break;
+                    
+                    if (response.status === 429 || response.status >= 500) {
+                        retries++;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2;
+                    } else {
+                        const errorBody = await response.text();
+                        throw new Error(`API Error ${response.status}: ${errorBody}`);
+                    }
+                } catch (error) {
+                    if (retries >= maxRetries - 1) throw error;
+                    retries++;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+
+            if (!response.ok) throw new Error(`API 요청 실패: ${response.statusText}`);
+
+            const result = await response.json();
+            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonText) throw new Error('AI로부터 유효한 JSON 응답을 받지 못했습니다.');
+            
+            const parsedData = JSON.parse(jsonText);
+            // 이전 버전 호환성: 배열이면 questions로 감싸기
+            if (Array.isArray(parsedData)) {
+                return { surveyTitle: "", surveyDescription: "", questions: parsedData };
+            }
+            return parsedData;
+        }
+        
+        function setLoading(isLoading, message) {
+            extractButton.disabled = isLoading;
+            if (isLoading) {
+                loadingSpinner.classList.remove('hidden');
+                statusMessage.textContent = message;
+            } else {
+                loadingSpinner.classList.add('hidden');
+                statusMessage.textContent = message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+.venv
+client_secrets.json
+*.log
+.git/
+.vscode/
+.DS_Store
+
+
