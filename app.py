@@ -60,7 +60,11 @@ def auth_google():
         client_config, scopes=SCOPES)
     
     # 사용자를 어디로 리디렉션할지(콜백 URL) 설정
-    flow.redirect_uri = url_for('auth_google_callback', _external=True)
+    # Vercel 환경에서는 환경 변수 사용, 로컬에서는 동적 생성
+    if os.environ.get('GOOGLE_REDIRECT_URI'):
+        flow.redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI')
+    else:
+        flow.redirect_uri = url_for('auth_google_callback', _external=True)
 
     # 인증 URL 생성 및 리디렉션
     authorization_url, state = flow.authorization_url(
@@ -82,7 +86,11 @@ def auth_google_callback():
     client_config = get_client_config()
     flow = google_auth_oauthlib.flow.Flow.from_client_config(
         client_config, scopes=SCOPES)
-    flow.redirect_uri = url_for('auth_google_callback', _external=True)
+    # Vercel 환경에서는 환경 변수 사용, 로컬에서는 동적 생성
+    if os.environ.get('GOOGLE_REDIRECT_URI'):
+        flow.redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI')
+    else:
+        flow.redirect_uri = url_for('auth_google_callback', _external=True)
 
     # Google로부터 받은 인증 코드로 토큰 교환
     authorization_response = request.url
